@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Job, JobStatus, STATUS_CONFIG, ALL_STATUSES } from '@/lib/types';
 import {
   isWaitingFivePlusDays,
@@ -18,7 +18,10 @@ import {
   ChevronDown,
   Calendar,
   FileText,
+  Copy,
+  Check,
 } from 'lucide-react';
+import { useToast } from '@/components/ui/Toast';
 
 interface JobCardProps {
   job: Job;
@@ -27,6 +30,8 @@ interface JobCardProps {
 }
 
 export function JobCard({ job, onClick, onStatusChange }: JobCardProps) {
+  const [copied, setCopied] = useState(false);
+  const { toast } = useToast();
   const isAwaitingReferral = job.status === 'awaiting_referral';
   const hasSentConnection = job.connection_status === 'sent' && job.connection_sent_on;
   const daysWaiting = job.connection_sent_on ? getDaysDiff(job.connection_sent_on) : null;
@@ -39,6 +44,19 @@ export function JobCard({ job, onClick, onStatusChange }: JobCardProps) {
   const handleStatusSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     e.stopPropagation();
     onStatusChange(job.id, e.target.value as JobStatus);
+  };
+
+  const handleCopyJd = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!job.jd_text) return;
+    try {
+      await navigator.clipboard.writeText(job.jd_text);
+      setCopied(true);
+      toast(`Copied JD for ${job.company}`, 'success');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast('Failed to copy JD', 'error');
+    }
   };
 
   return (
@@ -118,6 +136,18 @@ export function JobCard({ job, onClick, onStatusChange }: JobCardProps) {
             <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 truncate">
               <UserCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               <span className="truncate font-medium">{job.referral_contact_name}</span>
+              {job.referral_contact_linkedin_url && (
+                <a
+                  href={job.referral_contact_linkedin_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 shrink-0 p-0.5"
+                  title="Open LinkedIn profile"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
             </div>
 
             {hasSentConnection && daysWaiting !== null && (
@@ -151,10 +181,19 @@ export function JobCard({ job, onClick, onStatusChange }: JobCardProps) {
       <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500">
         <div className="flex items-center gap-2">
           {job.jd_text && (
-            <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 font-medium" title="JD saved">
-              <FileText className="w-3 h-3" />
-              <span>JD</span>
-            </span>
+            <button
+              type="button"
+              onClick={handleCopyJd}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                copied
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                  : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300'
+              }`}
+              title="Click to copy full JD text"
+            >
+              {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+              <span>{copied ? 'Copied' : 'JD'}</span>
+            </button>
           )}
           {job.resume_version && (
             <span className="truncate max-w-[100px]" title={job.resume_version}>

@@ -4,8 +4,8 @@ import { Job, JobInsert, JobUpdate } from './types';
 import { INITIAL_SAMPLE_JOBS } from './sample-data';
 import { createClient, isSupabaseConfigured } from './supabase/client';
 
-const LOCAL_STORAGE_KEY = 'job_tracker_jobs_v1';
-const LOCAL_USER_KEY = 'job_tracker_current_user_v1';
+const LOCAL_STORAGE_KEY = 'job_tracker_jobs_v2';
+const LOCAL_USER_KEY = 'job_tracker_current_user_v2';
 
 export interface AppUser {
   id: string;
@@ -14,16 +14,19 @@ export interface AppUser {
 
 export class JobRepository {
   private static getLocalJobs(): Job[] {
-    if (typeof window === 'undefined') return INITIAL_SAMPLE_JOBS;
+    if (typeof window === 'undefined') return [];
+    try {
+      localStorage.removeItem('job_tracker_jobs_v1');
+    } catch {}
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (!raw) {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_SAMPLE_JOBS));
-      return INITIAL_SAMPLE_JOBS;
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([]));
+      return [];
     }
     try {
       return JSON.parse(raw);
     } catch {
-      return INITIAL_SAMPLE_JOBS;
+      return [];
     }
   }
 
@@ -247,11 +250,11 @@ export class JobRepository {
   }
 
   /**
-   * Reset to initial sample jobs
+   * Clear all jobs
    */
-  public static resetSampleData(): Job[] {
-    this.setLocalJobs(INITIAL_SAMPLE_JOBS);
-    return INITIAL_SAMPLE_JOBS;
+  public static clearAllJobs(): Job[] {
+    this.setLocalJobs([]);
+    return [];
   }
 
   /**

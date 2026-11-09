@@ -162,12 +162,12 @@ export default function DashboardPage() {
     toast('Job deleted', 'info');
   };
 
-  // Reset sample data
-  const handleResetSampleData = () => {
-    if (confirm('Reset your tracker with the 5 realistic sample jobs?')) {
-      const reset = JobRepository.resetSampleData();
-      setJobs(reset);
-      toast('Reset to 5 sample jobs', 'success');
+  // Clear all jobs
+  const handleClearAll = () => {
+    if (confirm('Clear all jobs from your tracker?')) {
+      const empty = JobRepository.clearAllJobs();
+      setJobs(empty);
+      toast('All jobs cleared', 'info');
     }
   };
 
@@ -239,15 +239,17 @@ export default function DashboardPage() {
             {/* CSV Export & Import */}
             <CsvImportExport jobs={jobs} onImportCompleted={fetchAllJobs} />
 
-            {/* Reset sample data button */}
-            <button
-              type="button"
-              onClick={handleResetSampleData}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              title="Reset to 5 sample jobs"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
+            {/* Clear all jobs button */}
+            {jobs.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="p-2 rounded-xl text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="Clear all jobs"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Theme Toggle */}
             <ThemeToggle />
@@ -417,10 +419,15 @@ export default function DashboardPage() {
               </button>
               <button
                 type="button"
-                onClick={handleResetSampleData}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200"
+                onClick={() => {
+                  setSelectedJob(null);
+                  setInitialStatusForModal('saved');
+                  setIsFullModalOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-brand-600 hover:bg-brand-700 text-white shadow-sm inline-flex items-center gap-1.5"
               >
-                Load 5 Sample Jobs
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Full Job Details</span>
               </button>
             </div>
           </div>
