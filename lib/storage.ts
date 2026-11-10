@@ -1,8 +1,6 @@
 'use client';
 
 import { Job, JobInsert, JobUpdate } from './types';
-import { INITIAL_SAMPLE_JOBS } from './sample-data';
-import { createClient, isSupabaseConfigured } from './supabase/client';
 
 const LOCAL_STORAGE_KEY = 'job_tracker_jobs_v2';
 const LOCAL_USER_KEY = 'job_tracker_current_user_v2';
@@ -38,14 +36,7 @@ export class JobRepository {
   public static getCurrentUser(): AppUser | null {
     if (typeof window === 'undefined') return null;
     const raw = localStorage.getItem(LOCAL_USER_KEY);
-    if (!raw) {
-      const defaultUser: AppUser = {
-        id: 'usr_me',
-        email: 'me@jobtracker.local',
-      };
-      localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(defaultUser));
-      return defaultUser;
-    }
+    if (!raw) return null;
     try {
       return JSON.parse(raw);
     } catch {
@@ -63,27 +54,22 @@ export class JobRepository {
   }
 
   /**
-   * Fetch all jobs
+   * Fetch all jobs (via MongoDB API with local fallback)
    */
   public static async getJobs(): Promise<Job[]> {
-    if (isSupabaseConfigured()) {
-      const supabase = createClient();
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('jobs')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (!error && data) {
-          // Normalize interview_dates
-          return data.map((j) => ({
+    try {
+      const res = await fetch('/api/jobs', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.jobs)) {
+          return data.jobs.map((j: any) => ({
             ...j,
-            interview_dates: Array.isArray(j.interview_dates)
-              ? j.interview_dates
-              : [],
-          })) as Job[];
+            interview_dates: Array.isArray(j.interview_dates) ? j.interview_dates : [],
+          }));
         }
       }
+    } catch (e) {
+      console.warn('API error, using local storage fallback', e);
     }
 
     return this.getLocalJobs();
@@ -93,24 +79,21 @@ export class JobRepository {
    * Fetch a single job by ID
    */
   public static async getJobById(id: string): Promise<Job | null> {
-    if (isSupabaseConfigured()) {
-      const supabase = createClient();
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('jobs')
-          .select('*')
-          .eq('id', id)
-          .single();
-
-        if (!error && data) {
+    try {
+      const res = await fetch(`/api/jobs/${id}`, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.job) {
           return {
-            ...data,
-            interview_dates: Array.isArray(data.interview_dates)
-              ? data.interview_dates
+            ...data.job,
+            interview_dates: Array.isArray(data.job.interview_dates)
+              ? data.job.interview_dates
               : [],
-          } as Job;
+          };
         }
       }
+    } catch (e) {
+      console.warn('API error, using local fallback', e);
     }
 
     const local = this.getLocalJobs();
@@ -121,6 +104,28 @@ export class JobRepository {
    * Create a new job
    */
   public static async createJob(jobData: JobInsert): Promise<Job> {
+    try {
+      const res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(jobData),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.job) {
+          return {
+            ...data.job,
+            interview_dates: Array.isArray(data.job.interview_dates)
+              ? data.job.interview_dates
+              : [],
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('API error, saving locally', e);
+    }
+
     const user = this.getCurrentUser();
     const newId =
       jobData.id ||
@@ -138,51 +143,8 @@ export class JobRepository {
       interview_dates: jobData.interview_dates || [],
     };
 
-    if (isSupabaseConfigured()) {
-      const supabase = createClient();
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('jobs')
-          .insert([
-            {
-              company: newJob.company,
-              role: newJob.role,
-              job_url: newJob.job_url,
-              location: newJob.location,
-              salary: newJob.salary,
-              status: newJob.status,
-              jd_text: newJob.jd_text,
-              resume_version: newJob.resume_version,
-              applied_on: newJob.applied_on || null,
-              source: newJob.source,
-              referral_contact_name: newJob.referral_contact_name,
-              referral_contact_role: newJob.referral_contact_role,
-              referral_contact_linkedin_url: newJob.referral_contact_linkedin_url,
-              connection_status: newJob.connection_status,
-              connection_sent_on: newJob.connection_sent_on || null,
-              next_followup_on: newJob.next_followup_on || null,
-              interview_dates: newJob.interview_dates,
-              notes: newJob.notes,
-            },
-          ])
-          .select()
-          .single();
-
-        if (!error && data) {
-          return {
-            ...data,
-            interview_dates: Array.isArray(data.interview_dates)
-              ? data.interview_dates
-              : [],
-          } as Job;
-        }
-      }
-    }
-
-    // Local fallback
     const jobs = this.getLocalJobs();
-    const updated = [newJob, ...jobs];
-    this.setLocalJobs(updated);
+    this.setLocalJobs([newJob, ...jobs]);
     return newJob;
   }
 
@@ -190,37 +152,33 @@ export class JobRepository {
    * Update an existing job
    */
   public static async updateJob(id: string, updates: JobUpdate): Promise<Job | null> {
-    const now = new Date().toISOString();
+    try {
+      const res = await fetch(`/api/jobs/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
 
-    if (isSupabaseConfigured()) {
-      const supabase = createClient();
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('jobs')
-          .update({
-            ...updates,
-            updated_at: now,
-          })
-          .eq('id', id)
-          .select()
-          .single();
-
-        if (!error && data) {
+      if (res.ok) {
+        const data = await res.json();
+        if (data.job) {
           return {
-            ...data,
-            interview_dates: Array.isArray(data.interview_dates)
-              ? data.interview_dates
+            ...data.job,
+            interview_dates: Array.isArray(data.job.interview_dates)
+              ? data.job.interview_dates
               : [],
-          } as Job;
+          };
         }
       }
+    } catch (e) {
+      console.warn('API error, updating locally', e);
     }
 
-    // Local fallback
     const jobs = this.getLocalJobs();
     const index = jobs.findIndex((j) => j.id === id);
     if (index === -1) return null;
 
+    const now = new Date().toISOString();
     const updatedJob: Job = {
       ...jobs[index],
       ...updates,
@@ -235,12 +193,13 @@ export class JobRepository {
    * Delete a job
    */
   public static async deleteJob(id: string): Promise<boolean> {
-    if (isSupabaseConfigured()) {
-      const supabase = createClient();
-      if (supabase) {
-        const { error } = await supabase.from('jobs').delete().eq('id', id);
-        if (!error) return true;
-      }
+    try {
+      const res = await fetch(`/api/jobs/${id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) return true;
+    } catch (e) {
+      console.warn('API error, deleting locally', e);
     }
 
     const jobs = this.getLocalJobs();
@@ -339,7 +298,7 @@ export class JobRepository {
 
       const company = getCol('company');
       const role = getCol('role');
-      if (!company || !role) continue; // Skip rows missing mandatory fields
+      if (!company || !role) continue;
 
       let interviewDates = [];
       try {
@@ -400,9 +359,6 @@ export class JobRepository {
   }
 }
 
-/**
- * Robust RFC 4180 CSV parser handling multiline text, escapes and quotes
- */
 function parseCsvRows(text: string): string[][] {
   const result: string[][] = [];
   let row: string[] = [];
@@ -467,4 +423,3 @@ function parseCsvRows(text: string): string[][] {
 
   return result;
 }
-

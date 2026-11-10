@@ -3,23 +3,20 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { JobRepository } from '@/lib/storage';
 import { authSchema } from '@/lib/validations';
-import { Briefcase, ArrowRight, Loader2, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Briefcase, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 
 export default function SignUpPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setSuccessMessage(null);
 
     const validation = authSchema.safeParse({ email, password });
     if (!validation.success) {
@@ -30,43 +27,22 @@ export default function SignUpPage() {
     setLoading(true);
 
     try {
-      if (isSupabaseConfigured()) {
-        const supabase = createClient();
-        if (supabase) {
-          const { data, error: authError } = await supabase.auth.signUp({
-            email,
-            password,
-          });
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
 
-          if (authError) {
-            setError(authError.message);
-            setLoading(false);
-            return;
-          }
+      const data = await res.json();
 
-          if (data.user) {
-            JobRepository.setCurrentUser({
-              id: data.user.id,
-              email: data.user.email || email,
-            });
+      if (!res.ok) {
+        setError(data.error || 'Failed to create account');
+        setLoading(false);
+        return;
+      }
 
-            if (data.session) {
-              router.push('/');
-              router.refresh();
-              return;
-            } else {
-              setSuccessMessage('Account created! Please check your email to verify your account.');
-              setLoading(false);
-              return;
-            }
-          }
-        }
-      } else {
-        // Local mode sign up
-        JobRepository.setCurrentUser({
-          id: 'usr_' + Math.random().toString(36).substring(2, 9),
-          email,
-        });
+      if (data.user) {
+        JobRepository.setCurrentUser(data.user);
         router.push('/');
         router.refresh();
       }
@@ -98,26 +74,10 @@ export default function SignUpPage() {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white dark:bg-slate-900 py-8 px-6 shadow-xl border border-slate-200/80 dark:border-slate-800 sm:rounded-2xl sm:px-10">
-          {!isSupabaseConfigured() && (
-            <div className="mb-6 p-3 rounded-xl bg-blue-50 dark:bg-brand-950/40 border border-blue-200 dark:border-brand-900/60 flex items-start gap-2.5 text-xs text-brand-900 dark:text-brand-300">
-              <ShieldCheck className="w-4 h-4 text-brand-600 dark:text-brand-400 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-semibold block">Demo & Local Storage Mode Active</span>
-                You can create a local profile immediately.
-              </div>
-            </div>
-          )}
-
           {error && (
             <div className="mb-5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
-            </div>
-          )}
-
-          {successMessage && (
-            <div className="mb-5 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-xs text-emerald-800 dark:text-emerald-300">
-              {successMessage}
             </div>
           )}
 
@@ -185,4 +145,3 @@ export default function SignUpPage() {
     </div>
   );
 }
-

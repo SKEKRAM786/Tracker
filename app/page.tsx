@@ -32,6 +32,7 @@ import {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
@@ -50,6 +51,28 @@ export default function DashboardPage() {
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT');
+
+      if (e.key === '/' && !isInput) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if ((e.key === 'q' || e.key === 'Q') && !isInput && !isQuickAddOpen && !isFullModalOpen) {
+        e.preventDefault();
+        setIsQuickAddOpen(true);
+      } else if (e.key === 'Escape') {
+        setIsQuickAddOpen(false);
+        setIsFullModalOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isQuickAddOpen, isFullModalOpen]);
+
   // Load jobs and user
   const fetchAllJobs = async () => {
     try {
@@ -63,39 +86,34 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    // Check user
-    if (isSupabaseConfigured()) {
-      const supabase = createClient();
-      if (supabase) {
-        supabase.auth.getUser().then(({ data }) => {
-          if (data.user) {
-            setUser({
-              id: data.user.id,
-              email: data.user.email || '',
-            });
-          } else {
-            setUser(null);
-          }
-        });
-      }
-    } else {
-      setUser(JobRepository.getCurrentUser());
-    }
-
-    fetchAllJobs();
+    // Check authenticated session
+    fetch('/api/auth/me')
+      .then((res) => {
+        if (!res.ok) throw new Error('Not authenticated');
+        return res.json();
+      })
+      .then((data) => {
+        if (data.user) {
+          setUser(data.user);
+          JobRepository.setCurrentUser(data.user);
+          fetchAllJobs();
+        } else {
+          router.push('/login');
+        }
+      })
+      .catch(() => {
+        router.push('/login');
+      });
   }, []);
 
   const handleSignOut = async () => {
-    if (isSupabaseConfigured()) {
-      const supabase = createClient();
-      if (supabase) {
-        await supabase.auth.signOut();
-      }
-    }
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {}
     JobRepository.setCurrentUser(null);
     setUser(null);
-    toast('Signed out', 'info');
-    router.refresh();
+    toast('Signed out successfully', 'info');
+    router.push('/login');
   };
 
   // Optimistic status change
@@ -329,21 +347,28 @@ export default function DashboardPage() {
           <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
             <input
+              ref={searchInputRef}
               type="text"
-              placeholder="Search company, role, contact or JD text..."
+              placeholder="Search company, role, contact or JD text... (Press /)"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs sm:text-sm pl-10 pr-9 py-2.5 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-2xs"
+              className="w-full text-xs sm:text-sm pl-10 pr-14 py-2.5 rounded-xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-2xs"
             />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
+            <div className="absolute right-3 top-2.5 flex items-center gap-1.5">
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              ) : (
+                <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono font-medium text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md">
+                  /
+                </kbd>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center justify-between sm:justify-end gap-3">
